@@ -61,6 +61,8 @@ public class DoorServiceServer {
 		}
 	}
 
+	//DOOR IMPLEMENTATION
+
 	static class DoorServiceImpl extends DoorServiceGrpc.DoorServiceImplBase {
 		private ArrayList<Integer> doors = new ArrayList<>();
 //		private ArrayList<Integer> lockedDoors = new ArrayList<>();
@@ -74,7 +76,7 @@ public class DoorServiceServer {
 			}
 		}
 
-		@Override
+		@Override //LOCK DOOR METHOD - UNARY
 		public void lockDoor(DoorRequest request, StreamObserver<LockDoorResponse> responseObserver) {
 			System.out.println("Trying to Lock Door #" + request.getDoorNumber());
 			LockDoorResponse response;
@@ -89,7 +91,7 @@ public class DoorServiceServer {
 			responseObserver.onCompleted();
 		}
 
-		@Override
+		@Override // UNLOCK DOOR METHOD - UNARY
 		public void unlockDoor(DoorRequest request, StreamObserver<UnlockDoorResponse> responseObserver) {
 			System.out.println("Unlocking Door #" + request.getDoorNumber());
 			UnlockDoorResponse response = UnlockDoorResponse.newBuilder().setUnlocked(true).build();
@@ -97,20 +99,21 @@ public class DoorServiceServer {
 			responseObserver.onCompleted();
 		}
 
-		@Override
+		@Override //CHECK DOOR METHOD - CLIENT STREAM
 		public StreamObserver<DoorRequest> checkDoors(StreamObserver<DoorsResponse> responseObserver) {
 			return new StreamObserver<DoorRequest>() {
+				//Create array list to register doors that are locked and unlocked
 				ArrayList<Integer> locked = new ArrayList<>();
 				ArrayList<Integer> unlocked = new ArrayList<>();
 
 				@Override
 				public void onNext(DoorRequest value) {
 					System.out.println("Checking door #" + value.getDoorNumber());
-					if (value.getDoorNumber() % 2 == 0) {
+					if (value.getDoorNumber() % 2 == 0) { //if door divided by 2 is 0 - the door is locked
 						if (!locked.contains(value.getDoorNumber())) {
 							locked.add(value.getDoorNumber());
 						}
-					} else {
+					} else {// door is unlocked
 						if (!unlocked.contains(value.getDoorNumber())) {
 							unlocked.add(value.getDoorNumber());
 						}
@@ -123,7 +126,7 @@ public class DoorServiceServer {
 				}
 
 				@Override
-				public void onCompleted() {
+				public void onCompleted() { //Response
 					System.out.println("Finished checking Doors | Locked: " + locked.toString() + " | Unlocked: "
 							+ unlocked.toString());
 					DoorsResponse response = DoorsResponse.newBuilder().addAllLockedDoors(locked)
