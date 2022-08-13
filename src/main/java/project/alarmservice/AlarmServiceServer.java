@@ -1,17 +1,17 @@
 package project.alarmservice;
 
-import java.io.IOException;
-import java.net.InetAddress;
-import java.util.ArrayList;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
-
-import javax.jmdns.JmDNS;
-import javax.jmdns.ServiceInfo;
-
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
+import project.cameraservice.CameraServiceServer;
+import project.doorservice.DoorServiceGrpc;
+import project.doorservice.DoorServiceServer;
+
+import javax.jmdns.JmDNS;
+import javax.jmdns.ServiceInfo;
+import java.io.IOException;
+import java.util.Date;
+import java.util.concurrent.TimeUnit;
 
 public class AlarmServiceServer {
 
@@ -19,29 +19,30 @@ public class AlarmServiceServer {
     private Server server;
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        final AlarmServiceServer server = new AlarmServiceServer();
+        final CameraServiceServer server = new CameraServiceServer();
         server.start(50053);
         server.blockUntilShutdown();
     }
+
 
     public void start(int port) throws IOException, InterruptedException {
         /**
          * Registering Service with JmDNS
          */
         JmDNS jmdns = JmDNS.create("localhost");
-        ServiceInfo serviceInfo = ServiceInfo.create(JMDNS_SERVICE_TYPE, "AlarmService", port, "alarmservice=grpc");
+        ServiceInfo serviceInfo = ServiceInfo.create(JMDNS_SERVICE_TYPE, "Alarm Service", port, "alarmservice=grpc");
         jmdns.registerService(serviceInfo);
 
         Thread.sleep(1000);
 
-        server = ServerBuilder.forPort(port).addService(new DoorServiceImpl()).build().start();
-        System.out.println("AlarmService Server Started, listening on port: " + port);
+        server = ServerBuilder.forPort(port).addService(new AlarmServiceServer.AlarmServiceImpl()).build().start();
+        System.out.println("Alarm Server Started, listening on port: " + port);
         Runtime.getRuntime().addShutdownHook(new Thread() {
             @Override
             public void run() {
                 System.out.println("*** shutting down ***");
                 try {
-                    DoorServiceServer.this.stop();
+                    AlarmServiceServer.this.stop();
                 } catch (InterruptedException e) {
                     e.printStackTrace(System.out);
                 }
@@ -60,71 +61,55 @@ public class AlarmServiceServer {
         if (server != null) {
             server.awaitTermination();
         }
-    }
+    }//End of Server Implementation
 
-    //ALARM IMPLEMENTATION
 
-    static class DoorServiceImpl extends AlarmServiceGrpc.AlarmServiceImplBase {
+    static class AlarmServiceImpl extends AlarmServiceGrpc.AlarmServiceImplBase {
 
-        @Override //ALARM METHOD - UNARY
-        public void TurnOnAlarm(Home request, StreamObserver<TurnOnAlarmResponse> responseObserver) {
-            System.out.println("Turning alarm on...");
-            TurnOnAlarmResponse response;
-            if (request.get)) {
-                response = LockDoorResponse.newBuilder().setLocked(true).build();
-                System.out.println("[Locked] Door #" + request.getDoorNumber());
-            } else {
-                response = LockDoorResponse.newBuilder().setLocked(false).build();
-                System.out.println("[Not Found] Door #" + request.getDoorNumber());
+        @Override
+        public void turnOnAlarm(Home request, StreamObserver<TurnOnAlarmResponse> responseObserver) {
+
+            TurnOnAlarmResponse response = null;
+
+            if (request.equals(true)){
+                response = TurnOnAlarmResponse.newBuilder().setTurnedOn(true).build();
+                System.out.println("Alarm ON");
             }
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         }
 
-        @Override // ALARM FF METHOD - UNARY
-        public void TurnOffAlarm(DoorRequest request, StreamObserver<UnlockDoorResponse> responseObserver) {
-            System.out.println("Unlocking Door #" + request.getDoorNumber());
-            UnlockDoorResponse response = UnlockDoorResponse.newBuilder().setUnlocked(true).build();
+        @Override
+        public void turnOffAlarm(Home request, StreamObserver<TurnOffAlarmResponse> responseObserver) {
+            TurnOffAlarmResponse response = null;
+
+            if (request.equals(true)){
+                response = TurnOffAlarmResponse.newBuilder().setTurnedOff(true).build();
+                System.out.println("Alarm OFF");
+            }
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         }
 
-        @Override //CHECK DOOR METHOD - CLIENT STREAM
-        public StreamObserver<DoorRequest> checkDoors(StreamObserver<DoorsResponse> responseObserver) {
-            return new StreamObserver<DoorRequest>() {
-                //Create array list to register doors that are locked and unlocked
-                ArrayList<Integer> locked = new ArrayList<>();
-                ArrayList<Integer> unlocked = new ArrayList<>();
+        @Override
+        public void panicButton(Home request, StreamObserver<PanicButtonResponse> responseObserver) {
 
-                @Override
-                public void onNext(DoorRequest value) {
-                    System.out.println("Checking door #" + value.getDoorNumber());
-                    if (value.getDoorNumber() % 2 == 0) { //if door divided by 2 is 0 - the door is locked
-                        if (!locked.contains(value.getDoorNumber())) {
-                            locked.add(value.getDoorNumber());
-                        }
-                    } else {// door is unlocked
-                        if (!unlocked.contains(value.getDoorNumber())) {
-                            unlocked.add(value.getDoorNumber());
-                        }
-                    }
-                }
 
-                @Override
-                public void onError(Throwable t) {
-                    System.out.println("Door Checking Cancelled");
-                }
+//          if (request.equals(true)){
+//              System.out.println("Panic Button Pressed: calling urgent service\"");
+//          }try {
+//                Thread.sleep(1000);
+//            }catch (InterruptedException e){
+//              e.printStackTrace();
+//            }
+//          responseObserver.
+//                  onNext(PanicButtonResponse.newBuilder()
+//                          .setTimestamp((int) (new Date().getTime()/1000))
+//                          .setInformation().build());
+//          responseObserver.onCompleted();
 
-                @Override
-                public void onCompleted() { //Response
-                    System.out.println("Finished checking Doors | Locked: " + locked.toString() + " | Unlocked: "
-                            + unlocked.toString());
-                    DoorsResponse response = DoorsResponse.newBuilder().addAllLockedDoors(locked)
-                            .addAllUnlockedDoors(unlocked).build();
-                    responseObserver.onNext(response);
-                    responseObserver.onCompleted();
-                }
-            };
         }
     }
+
+
 }
