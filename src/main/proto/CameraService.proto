@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+option java_package = "project.cameraservice";
+option java_multiple_files = true;
+option java_outer_classname = "CameraServiceProto";
+
+service CameraService {
+	//Server Streaming
+	rpc DetectMovement (DetectionRequest) returns (stream MovementDetectionResponse) {
+	}
+
+	//Server Streaming
+	rpc DetectNoise (DetectionRequest) returns (stream NoiseDetectionResponse) {
+	}
+
+	//Bidirectional Streaming
+	rpc ViewCamera (stream Room) returns (stream CameraViewResponse) {
+	}
+}
+
+message Room {
+	string roomIdentifier = 1;
+}
+
+message DetectionRequest {
+	Room room = 1;
+	int32 duration = 2;
+}
+
+message MovementDetectionResponse {
+	int64 timestamp = 1;
+	bool movement = 2;
+}
+
+message NoiseDetectionResponse {
+	int64 timestamp = 1;
+	bool noise = 2;
+}
+
+message CameraViewResponse {
+	string image = 1;
+}

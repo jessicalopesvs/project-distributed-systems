@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+option java_package = "project.doorservice";
+option java_multiple_files = true;
+option java_outer_classname = "DoorServiceProto";
+
+service DoorService {
+	//Unary
+	rpc LockDoor (DoorRequest) returns (LockDoorResponse) {
+	}
+
+	//Unary
+	rpc UnlockDoor (DoorRequest) returns (UnlockDoorResponse) {
+	}
+
+	//Client Streaming
+	rpc CheckDoors (stream DoorRequest) returns (DoorsResponse) {
+	}
+}
+
+message DoorRequest {
+	int32 doorNumber = 1;
+}
+
+message LockDoorResponse {
+	bool locked = 1;
+}
+
+message UnlockDoorResponse {
+	bool unlocked = 1;
+}
+
+message DoorsResponse {
+	repeated int32 lockedDoors = 1;
+	repeated int32 unlockedDoors = 2;
+}

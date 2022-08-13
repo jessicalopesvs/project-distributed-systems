@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+option java_package = "project.alarmservice";
+option java_multiple_files = true;
+option java_outer_classname = "AlarmServiceProto";
+
+service AlarmService {
+	//Unary
+	rpc TurnOnAlarm (Home) returns (TurnOnAlarmResponse) {
+	}
+
+	//Unary
+	rpc TurnOffAlarm (Home) returns (TurnOffAlarmResponse) {
+	}
+
+	//Server Streaming
+	rpc PanicButton (Home) returns (stream PanicButtonResponse) {
+	}
+}
+
+message Home {
+	string homeIdentifier = 1;
+}
+
+message TurnOnAlarmResponse {
+	Home home = 1;
+	bool turnedOn = 2;
+}
+
+message TurnOffAlarmResponse {
+	Home home = 1;
+	bool turnedOff = 2;
+}
+
+message PanicButtonResponse {
+	int64 timestamp = 1;
+	string information = 2;
+}
