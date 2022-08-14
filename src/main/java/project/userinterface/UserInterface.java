@@ -297,40 +297,39 @@ public class UserInterface{
 
     }
 
-
+    //Server Stream Action
     public void actionMovementSensor(ActionEvent e) {
+        //inserting in a thread to check movement constantly e getting the answer
         new Thread(() -> {
             ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 50052).usePlaintext().build();
             CameraServiceGrpc.CameraServiceBlockingStub client = CameraServiceGrpc.newBlockingStub(channel);
-            DetectionRequest request = DetectionRequest.newBuilder().setRoom(project.cameraservice.Room.newBuilder().setRoomIdentifier("room01").build()).setDuration(15).build();
+            DetectionRequest request = DetectionRequest.newBuilder()
+                    .setRoom(project.cameraservice.Room.newBuilder().setRoomIdentifier(Room.getText()).build()).setDuration(Integer.parseInt(Time.getText())).build();
             client.detectMovement(request).forEachRemaining(response -> {
                 System.out.println(response);
-                String tmp = MovementSensorReply.getText();
-                String msg = "[" + new Date(response.getTimestamp()) + "] Movement detected? " + response.getMovement() + "\n";
-                MovementSensorReply.setText(tmp + msg);
+                String msg = "[" + new Date() + "] Movement detected? " + response.getMovement() + "\n";
+                MovementSensorReply.append(msg);
             });
         }).start();
     }
 
-
-/**NOISE SENSOR**/
+    /**NOISE SENSOR**/
 
     private JLabel NoiseSensorLabel;
     private JTextArea NoiseSensorReply;
 
-    private JPanel getNoiseSensorService() {
+    private JPanel getNoiseSensorService()  {
 
         JPanel NoisePanel = new JPanel();
         JPanel NoisePanelReply = new JPanel();
         JPanel frame = new JPanel();
-
-
 
         JLabel label = new JLabel("LockDoor");
         BoxLayout boxLayout = new BoxLayout(NoisePanel, BoxLayout.X_AXIS);
 
         Border border = BorderFactory.createTitledBorder("Noise Sensor");
         frame.setBorder(border);
+        frame.setBounds(100,100,200,200);
 
 
         NoisePanel.setLayout(new BoxLayout(NoisePanel, BoxLayout.PAGE_AXIS));
@@ -349,7 +348,7 @@ public class UserInterface{
         NoisePanel.add(TimeLabel);
 
         Time = new JTextField("",10);
-        Time.setEditable(false);
+        Time.setEditable(true);
         NoisePanel.add(Time);
 
         //button
@@ -360,19 +359,25 @@ public class UserInterface{
         NoisePanel.add(button);
         NoisePanel.add(Box.createRigidArea(new Dimension(10, 0)));
 
+        //create container
 
-        //Replu
-        NoiseSensorReply= new JTextArea();
-        NoiseSensorReply.setEditable(false);
+        Container container = new Container();
+        container.setLayout(new FlowLayout());
 
-        JScrollPane sp = new JScrollPane();
-        sp.setPreferredSize(new Dimension(350, 100));
-        sp.add(NoiseSensorReply);
-        NoisePanelReply.add(sp);
+        //Reply JTexArea
+        NoiseSensorReply= new JTextArea(10, 30);
+        NoiseSensorReply.setCaretPosition(NoiseSensorReply.getDocument().getLength());
+        DefaultCaret caret = (DefaultCaret)NoiseSensorReply.getCaret();
+        caret.setUpdatePolicy(DefaultCaret.ALWAYS_UPDATE);
+
+
+        //JText Scrool pane
+        JScrollPane sp = new JScrollPane(NoiseSensorReply, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
+        container.add(sp);
 
         //Formatting
         frame.add(NoisePanel);
-        frame.add(NoisePanelReply);
+        frame.add(container);
         return frame;
 
     }
@@ -388,12 +393,12 @@ public class UserInterface{
             CameraServiceGrpc.CameraServiceBlockingStub client = CameraServiceGrpc.newBlockingStub(channel);
 
             //Setting the request
-            DetectionRequest request = DetectionRequest.newBuilder().setRoom(project.cameraservice.Room.newBuilder().setRoomIdentifier("room01").build()).setDuration(15).build();
+            DetectionRequest request = DetectionRequest.newBuilder()
+                    .setRoom(project.cameraservice.Room.newBuilder().setRoomIdentifier(Room.getText()).build()).setDuration(Integer.parseInt(Time.getText())).build();
             client.detectNoise(request).forEachRemaining(response -> {
                 System.out.println(response);
-                String tmp = NoiseSensorReply.getText();
-                String msg = "[" + new Date(response.getTimestamp()) + "] Noise detected? " + response.getNoise() + "\n";
-                NoiseSensorReply.setText(tmp + msg);
+                String msg = "[" + new Date() + "] Noise detected? " + response.getNoise() + "\n";
+                NoiseSensorReply.append(msg);
             });
         }).start();
     }//end of noise sensor
