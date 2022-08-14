@@ -1,8 +1,6 @@
 package project.cameraservice;
 
 import java.io.IOException;
-import java.net.InetAddress;
-import java.util.Date;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
@@ -64,7 +62,7 @@ public class CameraServiceServer {
 	static class CameraServiceImpl extends CameraServiceGrpc.CameraServiceImplBase {
 		@Override
 		public void detectMovement(DetectionRequest request,
-				StreamObserver<MovementDetectionResponse> responseObserver) {
+								   StreamObserver<MovementDetectionResponse> responseObserver) {
 			for (int i = 0; i < request.getDuration(); i++) {
 				System.out.println("Detecting Movement for Room #" + request.getRoom().getRoomIdentifier());
 				try {
@@ -72,35 +70,43 @@ public class CameraServiceServer {
 				} catch (InterruptedException e) {
 					e.printStackTrace();
 				}
-				responseObserver
-						.onNext(MovementDetectionResponse.newBuilder().setTimestamp((int) (new Date().getTime() / 1000))
-								.setMovement(ThreadLocalRandom.current().nextBoolean()).build());
+				responseObserver.onNext(MovementDetectionResponse.newBuilder()
+						.setMovement(ThreadLocalRandom.current().nextBoolean()).build());
 			}
 			responseObserver.onCompleted();
 		}
 
 		@Override
 		public void detectNoise(DetectionRequest request, StreamObserver<NoiseDetectionResponse> responseObserver) {
-			// TODO Auto-generated method stub
-			super.detectNoise(request, responseObserver);
+			for (int i = 0; i < request.getDuration(); i++) {
+				System.out.println("Detecting Noise for Room #" + request.getRoom().getRoomIdentifier());
+				try {
+					Thread.sleep(1000);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+				responseObserver.onNext(NoiseDetectionResponse.newBuilder()
+						.setNoise(ThreadLocalRandom.current().nextBoolean()).build());
+			}
+			responseObserver.onCompleted();
 		}
 
 		@Override
 		public StreamObserver<Room> viewCamera(StreamObserver<CameraViewResponse> responseObserver) {
 			return new StreamObserver<Room>() {
-				int i = 1;
+				int frameNumber = 1;
 
 				@Override
 				public void onNext(Room value) {
-					System.out.println("Displaying frame#" + i + " for Room #" + value.getRoomIdentifier());
+					System.out.println("Displaying frame#" + frameNumber + " for Room #" + value.getRoomIdentifier());
 					try {
 						Thread.sleep(1000);
 					} catch (InterruptedException e) {
 						e.printStackTrace();
 					}
 					responseObserver.onNext(CameraViewResponse.newBuilder()
-							.setImage(value.getRoomIdentifier() + "#frame#" + i).build());
-					i++;
+							.setImage(value.getRoomIdentifier() + "#frame#" + frameNumber).build());
+					frameNumber++;
 				}
 
 				@Override

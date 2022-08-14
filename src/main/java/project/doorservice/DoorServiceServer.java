@@ -1,8 +1,8 @@
 package project.doorservice;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
@@ -61,63 +61,97 @@ public class DoorServiceServer {
 		}
 	}
 
-	//DOOR IMPLEMENTATION
-
 	static class DoorServiceImpl extends DoorServiceGrpc.DoorServiceImplBase {
-		private ArrayList<Integer> doors = new ArrayList<>();
-//		private ArrayList<Integer> lockedDoors = new ArrayList<>();
-//		private ArrayList<Integer> unlockedDoors = new ArrayList<>();
+		// TODO: research about HashSet
+		private HashSet<Integer> lockedDoors = new HashSet<>();
+		private HashSet<Integer> unlockedDoors = new HashSet<>();
 
+		// constructor creating doors, all door will be initially unlocked
 		DoorServiceImpl() {
 			int numberOfDoors = ThreadLocalRandom.current().nextInt(5, 15);
-			System.out.println("Door Service has a Total of " + numberOfDoors + " Doors");
+			System.out.println("Door Service has been created with " + numberOfDoors + " Unlocked Doors");
 			for (int i = 1; i <= numberOfDoors; i++) {
-				doors.add(i);
+				unlockedDoors.add(i);
 			}
+			System.out.println(
+					"[Locked Doors] " + lockedDoors.toString() + " | [Unlocked Doors] " + unlockedDoors.toString());
 		}
 
-		@Override //LOCK DOOR METHOD - UNARY
+		@Override
 		public void lockDoor(DoorRequest request, StreamObserver<LockDoorResponse> responseObserver) {
 			System.out.println("Trying to Lock Door #" + request.getDoorNumber());
 			LockDoorResponse response;
-			if (doors.contains(request.getDoorNumber())) {
-				response = LockDoorResponse.newBuilder().setLocked(true).build();
+			if (unlockedDoors.contains(request.getDoorNumber())) {
+				// if door is unlocked, lock it
 				System.out.println("[Locked] Door #" + request.getDoorNumber());
+				lockedDoors.add(request.getDoorNumber());
+				unlockedDoors.remove(request.getDoorNumber());
+				response = LockDoorResponse.newBuilder().setLockMessage("Door Locked").build();
+			} else if (lockedDoors.contains(request.getDoorNumber())) {
+				// if door is already locked, don't do anything
+				System.out.println("[Already Locked] Door #" + request.getDoorNumber());
+				response = LockDoorResponse.newBuilder().setLockMessage("Door Already Locked").build();
 			} else {
-				response = LockDoorResponse.newBuilder().setLocked(false).build();
+				// if door isn't found, don't do anything
 				System.out.println("[Not Found] Door #" + request.getDoorNumber());
+				response = LockDoorResponse.newBuilder().setLockMessage("Door Not Found").build();
 			}
+			System.out.println(
+					"[Locked Doors] " + lockedDoors.toString() + " | [Unlocked Doors] " + unlockedDoors.toString());
 			responseObserver.onNext(response);
 			responseObserver.onCompleted();
 		}
 
-		@Override // UNLOCK DOOR METHOD - UNARY
+		@Override
 		public void unlockDoor(DoorRequest request, StreamObserver<UnlockDoorResponse> responseObserver) {
-			System.out.println("Unlocking Door #" + request.getDoorNumber());
-			UnlockDoorResponse response = UnlockDoorResponse.newBuilder().setUnlocked(true).build();
+			System.out.println("Trying to unlock Door #" + request.getDoorNumber());
+			UnlockDoorResponse response;
+			if (lockedDoors.contains(request.getDoorNumber())) {
+				// if door is locked, unlock it
+				System.out.println("[Unlocked] Door #" + request.getDoorNumber());
+				unlockedDoors.add(request.getDoorNumber());
+				lockedDoors.remove(request.getDoorNumber());
+				response = UnlockDoorResponse.newBuilder().setUnlockMessage("Door Unlocked").build();
+			} else if (unlockedDoors.contains(request.getDoorNumber())) {
+				// if door is already unlocked, don't do anything
+				System.out.println("[Already Unlocked] Door #" + request.getDoorNumber());
+				response = UnlockDoorResponse.newBuilder().setUnlockMessage("Door Already Unlocked").build();
+			} else {
+				// if door isn't found, don't do anything
+				System.out.println("[Not Found] Door #" + request.getDoorNumber());
+				response = UnlockDoorResponse.newBuilder().setUnlockMessage("Door Not Found").build();
+			}
+			System.out.println(
+					"[Locked Doors] " + lockedDoors.toString() + " | [Unlocked Doors] " + unlockedDoors.toString());
 			responseObserver.onNext(response);
 			responseObserver.onCompleted();
 		}
 
-		@Override //CHECK DOOR METHOD - CLIENT STREAM
+		@Override
 		public StreamObserver<DoorRequest> checkDoors(StreamObserver<DoorsResponse> responseObserver) {
 			return new StreamObserver<DoorRequest>() {
-				//Create array list to register doors that are locked and unlocked
 				ArrayList<Integer> locked = new ArrayList<>();
 				ArrayList<Integer> unlocked = new ArrayList<>();
+				ArrayList<Integer> notFound = new ArrayList<>();
 
 				@Override
 				public void onNext(DoorRequest value) {
-					System.out.println("Checking door #" + value.getDoorNumber());
-					if (value.getDoorNumber() % 2 == 0) { //if door divided by 2 is 0 - the door is locked
+					System.out.println("Checking Door #" + value.getDoorNumber());
+					if (lockedDoors.contains(value.getDoorNumber())) {
 						if (!locked.contains(value.getDoorNumber())) {
 							locked.add(value.getDoorNumber());
 						}
-					} else {// door is unlocked
+					} else if (unlockedDoors.contains(value.getDoorNumber())) {
 						if (!unlocked.contains(value.getDoorNumber())) {
 							unlocked.add(value.getDoorNumber());
 						}
+					} else {
+						if (!notFound.contains(value.getDoorNumber())) {
+							notFound.add(value.getDoorNumber());
+						}
 					}
+					System.out.println("[Locked Doors] " + lockedDoors.toString() + " | [Unlocked Doors] "
+							+ unlockedDoors.toString());
 				}
 
 				@Override
@@ -126,11 +160,11 @@ public class DoorServiceServer {
 				}
 
 				@Override
-				public void onCompleted() { //Response
+				public void onCompleted() {
 					System.out.println("Finished checking Doors | Locked: " + locked.toString() + " | Unlocked: "
 							+ unlocked.toString());
 					DoorsResponse response = DoorsResponse.newBuilder().addAllLockedDoors(locked)
-							.addAllUnlockedDoors(unlocked).build();
+							.addAllUnlockedDoors(unlocked).addAllNotFound(notFound).build();
 					responseObserver.onNext(response);
 					responseObserver.onCompleted();
 				}
