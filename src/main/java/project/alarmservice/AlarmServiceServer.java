@@ -1,17 +1,16 @@
 package project.alarmservice;
 
-import io.grpc.Server;
-import io.grpc.ServerBuilder;
-import io.grpc.stub.StreamObserver;
-import project.cameraservice.CameraServiceServer;
-import project.doorservice.DoorServiceGrpc;
-import project.doorservice.DoorServiceServer;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 import javax.jmdns.JmDNS;
 import javax.jmdns.ServiceInfo;
-import java.io.IOException;
-import java.util.Date;
-import java.util.concurrent.TimeUnit;
+
+import io.grpc.Server;
+import io.grpc.ServerBuilder;
+import io.grpc.stub.StreamObserver;
 
 public class AlarmServiceServer {
 
@@ -19,24 +18,23 @@ public class AlarmServiceServer {
     private Server server;
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        final CameraServiceServer server = new CameraServiceServer();
+        final AlarmServiceServer server = new AlarmServiceServer();
         server.start(50053);
         server.blockUntilShutdown();
     }
-
 
     public void start(int port) throws IOException, InterruptedException {
         /**
          * Registering Service with JmDNS
          */
         JmDNS jmdns = JmDNS.create("localhost");
-        ServiceInfo serviceInfo = ServiceInfo.create(JMDNS_SERVICE_TYPE, "Alarm Service", port, "alarmservice=grpc");
+        ServiceInfo serviceInfo = ServiceInfo.create(JMDNS_SERVICE_TYPE, "AlarmService", port, "alarmservice=grpc");
         jmdns.registerService(serviceInfo);
 
         Thread.sleep(1000);
 
         server = ServerBuilder.forPort(port).addService(new AlarmServiceServer.AlarmServiceImpl()).build().start();
-        System.out.println("Alarm Server Started, listening on port: " + port);
+        System.out.println("AlarmService Server Started, listening on port: " + port);
         Runtime.getRuntime().addShutdownHook(new Thread() {
             @Override
             public void run() {
@@ -61,55 +59,79 @@ public class AlarmServiceServer {
         if (server != null) {
             server.awaitTermination();
         }
-    }//End of Server Implementation
-
+    }// End of Server Implementation
 
     static class AlarmServiceImpl extends AlarmServiceGrpc.AlarmServiceImplBase {
+        private HashMap<String, Boolean> homes = new HashMap<>();
 
         @Override
         public void turnOnAlarm(Home request, StreamObserver<TurnOnAlarmResponse> responseObserver) {
-
-            TurnOnAlarmResponse response = null;
-
-            if (request.equals(true)){
-                response = TurnOnAlarmResponse.newBuilder().setTurnedOn(true).build();
-                System.out.println("Alarm ON");
+            System.out.println("Trying to Turn on Alarm for Home: " + request.getHomeIdentifier());
+            TurnOnAlarmResponse response;
+            if (homes.containsKey(request.getHomeIdentifier())) {
+                Boolean alarmStatus = homes.get(request.getHomeIdentifier());
+                if (alarmStatus) {
+                    response = TurnOnAlarmResponse.newBuilder().setHome(request)
+                            .setTurnOnMessage("Alarm Already Turned On").build();
+                } else {
+                    homes.put(request.getHomeIdentifier(), true);
+                    response = TurnOnAlarmResponse.newBuilder().setHome(request).setTurnOnMessage("Alarm Turned On")
+                            .build();
+                }
+            } else {
+                homes.put(request.getHomeIdentifier(), true);
+                response = TurnOnAlarmResponse.newBuilder().setHome(request)
+                        .setTurnOnMessage("Home Registered & Alarm Turned On").build();
             }
+            System.out.println("[Homes Alarms] " + homes.toString());
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         }
 
         @Override
         public void turnOffAlarm(Home request, StreamObserver<TurnOffAlarmResponse> responseObserver) {
+            System.out.println("Trying to Turn off Alarm for Home: " + request.getHomeIdentifier());
             TurnOffAlarmResponse response = null;
-
-            if (request.equals(true)){
-                response = TurnOffAlarmResponse.newBuilder().setTurnedOff(true).build();
-                System.out.println("Alarm OFF");
+            if (homes.containsKey(request.getHomeIdentifier())) {
+                Boolean alarmStatus = homes.get(request.getHomeIdentifier());
+                if (!alarmStatus) {
+                    response = TurnOffAlarmResponse.newBuilder().setHome(request)
+                            .setTurnOffMessage("Alarm Already Turned Off").build();
+                } else {
+                    homes.put(request.getHomeIdentifier(), false);
+                    response = TurnOffAlarmResponse.newBuilder().setHome(request).setTurnOffMessage("Alarm Turned Off")
+                            .build();
+                }
+            } else {
+                homes.put(request.getHomeIdentifier(), false);
+                response = TurnOffAlarmResponse.newBuilder().setHome(request)
+                        .setTurnOffMessage("Home Registered & Alarm Turned Off").build();
             }
+            System.out.println("[Homes Alarms] " + homes.toString());
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         }
 
         @Override
         public void panicButton(Home request, StreamObserver<PanicButtonResponse> responseObserver) {
-
-
-//          if (request.equals(true)){
-//              System.out.println("Panic Button Pressed: calling urgent service\"");
-//          }try {
-//                Thread.sleep(1000);
-//            }catch (InterruptedException e){
-//              e.printStackTrace();
-//            }
-//          responseObserver.
-//                  onNext(PanicButtonResponse.newBuilder()
-//                          .setTimestamp((int) (new Date().getTime()/1000))
-//                          .setInformation().build());
-//          responseObserver.onCompleted();
-
+            System.out.println("Panic Button Pressed: calling urgent service");
+            responseObserver.onNext(PanicButtonResponse.newBuilder()
+                    .setInformation("Will reach out to the Police in a momment...").build());
+            for (int i = 0; i < ThreadLocalRandom.current().nextInt(3, 10); i++) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                responseObserver.onNext(PanicButtonResponse.newBuilder()
+                        .setInformation(
+                                "Talking with the Police, we will notify once the patrol has been dispatched...")
+                        .build());
+            }
+            responseObserver.onNext(
+                    PanicButtonResponse.newBuilder().setInformation("The Police patrol has been dispatched.").build());
+            responseObserver.onCompleted();
         }
     }
-
 
 }
