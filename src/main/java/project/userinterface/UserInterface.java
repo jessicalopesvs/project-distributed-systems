@@ -526,8 +526,6 @@ public class UserInterface{
 
         return AlarmPanel;
 
-        AAAAAAA
-
         JPanel panel = new JPanel();
 
         Border border = BorderFactory.createTitledBorder("Lock Door Service");
