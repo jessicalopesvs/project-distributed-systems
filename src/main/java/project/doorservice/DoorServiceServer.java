@@ -5,34 +5,31 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
-
-import javax.jmdns.JmDNS;
-import javax.jmdns.ServiceInfo;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
+import project.jmdnsutil.JmDnsUtil;
 
 public class DoorServiceServer {
-	public static final String JMDNS_SERVICE_TYPE = "_doorservice._tcp.local.";
+	public static final String JMDNS_SERVICE_TYPE = "_doorservice._grpc.local.";
 	private Server server;
+	private AtomicBoolean serverStarting;
 
-	public static void main(String[] args) throws IOException, InterruptedException {
-		final DoorServiceServer server = new DoorServiceServer();
-		server.start(50051);
-		server.blockUntilShutdown();
+	public AtomicBoolean getServerStarting() {
+		return serverStarting;
+	}
+
+	public void setServerStarting(AtomicBoolean serverStarting) {
+		this.serverStarting = serverStarting;
 	}
 
 	public void start(int port) throws IOException, InterruptedException {
-		/**
-		 * Registering Service with JmDNS
-		 */
-		JmDNS jmdns = JmDNS.create("localhost");
-		ServiceInfo serviceInfo = ServiceInfo.create(JMDNS_SERVICE_TYPE, "DoorService", port, "doorservice=grpc");
-		jmdns.registerService(serviceInfo);
+		// calling jmdns util class to register service
+		JmDnsUtil.RegisterService(JMDNS_SERVICE_TYPE, "DoorService", port, "doorservice=grpc");
 
-		Thread.sleep(1000);
-
+		// starting service in the provided port
 		server = ServerBuilder.forPort(port).addService(new DoorServiceImpl()).build().start();
 		System.out.println("DoorService Server Started, listening on port: " + port);
 		Runtime.getRuntime().addShutdownHook(new Thread() {
@@ -59,10 +56,11 @@ public class DoorServiceServer {
 		if (server != null) {
 			server.awaitTermination();
 		}
-	}
+	}// End of Server Implementation
+
+	/** SERVICE IMPLEMENTATION */
 
 	static class DoorServiceImpl extends DoorServiceGrpc.DoorServiceImplBase {
-		// TODO: research about HashSet
 		private HashSet<Integer> lockedDoors = new HashSet<>();
 		private HashSet<Integer> unlockedDoors = new HashSet<>();
 

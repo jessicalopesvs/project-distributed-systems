@@ -1,4 +1,3 @@
-
 package project.userinterface;
 
 import io.grpc.ManagedChannel;
@@ -7,25 +6,122 @@ import io.grpc.stub.StreamObserver;
 import project.alarmservice.*;
 import project.cameraservice.*;
 import project.doorservice.*;
+import project.jmdnsutil.JmDnsUtil;
+import project.jmdnsutil.JmDnsUtil.GrpcServiceListener;
 
 import javax.swing.*;
 import javax.swing.border.Border;
 import javax.swing.text.DefaultCaret;
 import java.awt.*;
 import java.awt.event.ActionEvent;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class UserInterface {
-
-    public static void main(String[] args) {
-        project.userinterface.UserInterface gui = new project.userinterface.UserInterface();
+public class UserInterface{
+	private static final ArrayList<String> SERVICES = new ArrayList<String>(
+			Arrays.asList(DoorServiceServer.JMDNS_SERVICE_TYPE, CameraServiceServer.JMDNS_SERVICE_TYPE,
+					AlarmServiceServer.JMDNS_SERVICE_TYPE));
+	private HashMap<String, Integer> servicesPort = new HashMap<>(); 
+	
+    public static void main(String[] args) throws InterruptedException {
+    	HashMap<String, GrpcServiceListener> listeners = new HashMap<>();
+    	for (String service: SERVICES) {
+    		try {
+    			GrpcServiceListener listener = JmDnsUtil.DiscoverService(service);
+				listeners.put(service, listener);
+			} catch (IOException | InterruptedException e) {
+				// not able to discover service, print error and stop initialization 
+				e.printStackTrace();
+				return;
+			}
+    	}
+    	
+    	/**
+    	 * Starting Door Service Server
+    	 */
+    	final DoorServiceServer doorServer = new DoorServiceServer();
+    	doorServer.setServerStarting(new AtomicBoolean(false));
+    	new Thread(() -> {
+			try {
+				doorServer.start(50051);
+				doorServer.setServerStarting(new AtomicBoolean(true));
+				doorServer.blockUntilShutdown();
+			} catch (IOException e) {
+				e.printStackTrace();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}).start();
+    	
+    	/**
+    	 * Starting Camera Service Server
+    	 */
+    	final CameraServiceServer cameraServer = new CameraServiceServer();
+    	cameraServer.setServerStarting(new AtomicBoolean(false));
+    	new Thread(() -> {
+			try {
+				cameraServer.start(50052);
+				cameraServer.setServerStarting(new AtomicBoolean(true));
+				cameraServer.blockUntilShutdown();
+			} catch (IOException e) {
+				e.printStackTrace();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}).start();
+    	
+    	/**
+    	 * Starting Alarm Service Server
+    	 */
+    	final AlarmServiceServer alarmServer = new AlarmServiceServer();
+    	alarmServer.setServerStarting(new AtomicBoolean(false));
+    	new Thread(() -> {
+			try {
+				alarmServer.start(50053);
+				alarmServer.setServerStarting(new AtomicBoolean(true));
+				alarmServer.blockUntilShutdown();
+			} catch (IOException e) {
+				e.printStackTrace();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}).start();
+    	
+    	/**
+    	 * Wait until all the Server have started running
+    	 */
+    	while (!doorServer.getServerStarting().get() && !cameraServer.getServerStarting().get() && !alarmServer.getServerStarting().get()) {
+    		System.out.println("Waiting for servers to start...");
+    		Thread.sleep(5000);
+    	}
+    	
+    	HashMap<String, Integer> ports = new HashMap<>();
+    	for (Entry<String, GrpcServiceListener> entry : listeners.entrySet()) {
+    	    String key = entry.getKey();
+    	    GrpcServiceListener value = entry.getValue();
+    	    ports.put(key, value.getServicePort());
+    	}
+    	
+        UserInterface gui = new UserInterface();
+        gui.setServicesPort(ports);
         gui.build();
     }
+    
+    public HashMap<String, Integer> getServicesPort() {
+		return servicesPort;
+	}
+    
+    public void setServicesPort(HashMap<String, Integer> servicesPort) {
+		this.servicesPort = servicesPort;
+	}
 
     /**
      * Lock Door GUI - start
-     *
      * @return
      */
     private JLabel LockDoorLabel;
@@ -41,7 +137,7 @@ public class UserInterface {
         LockDoorLabel = new JLabel("Insert door number");
         panel.add(LockDoorLabel);
 
-        LockDoorNum = new JTextField("", 10);
+        LockDoorNum = new JTextField("",10);
         LockDoorNum.setEditable(true);
         panel.add(LockDoorNum);
 
@@ -51,30 +147,31 @@ public class UserInterface {
         panel.add(button);
         panel.add(Box.createRigidArea(new Dimension(10, 0)));
 
-        LockDoorReply = new JTextField("", 10);
+        LockDoorReply= new JTextField("", 20);
         LockDoorReply.setEditable(false);
         panel.add(LockDoorReply);
         return panel;
 
     }
 
-    //Unary Action
-    public void actionLockDoor(ActionEvent e) {
-        System.out.println("Lock door service to be invoked");
+	// Unary Action
+	public void actionLockDoor(ActionEvent e) {
+		System.out.println("Lock door service to be invoked");
 
-        ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 50051).usePlaintext().build();
-        project.doorservice.DoorServiceGrpc.DoorServiceBlockingStub client = project.doorservice.DoorServiceGrpc.newBlockingStub(channel);
-        //getting door number to reply if it is locked or not
-        project.doorservice.DoorRequest request = project.doorservice.DoorRequest.newBuilder().setDoorNumber(Integer.parseInt(LockDoorNum.getText())).build();
-        project.doorservice.LockDoorResponse response = client.lockDoor(request);
+		ManagedChannel channel = ManagedChannelBuilder
+				.forAddress("localhost", this.getServicesPort().get(DoorServiceServer.JMDNS_SERVICE_TYPE))
+				.usePlaintext().build();
+		DoorServiceGrpc.DoorServiceBlockingStub client = DoorServiceGrpc.newBlockingStub(channel);
+		// getting door number to reply if it is locked or not
+		DoorRequest request = DoorRequest.newBuilder().setDoorNumber(Integer.parseInt(LockDoorNum.getText())).build();
+		LockDoorResponse response = client.lockDoor(request);
 
-        //Reply
-        LockDoorReply.setText(response.getLockMessage());
-    }
+		// Reply
+		LockDoorReply.setText(response.getLockMessage());
+	}
 
     /**
      * Lock Door GUI - end
-     *
      * @return
      */
 
@@ -91,7 +188,7 @@ public class UserInterface {
         UnlockDoorLabel = new JLabel("Insert door number");
         panel.add(UnlockDoorLabel);
 
-        UnlockDoorNum = new JTextField("", 10);
+        UnlockDoorNum = new JTextField("",10);
         UnlockDoorNum.setEditable(true);
         panel.add(UnlockDoorNum);
 
@@ -101,40 +198,66 @@ public class UserInterface {
         panel.add(button);
         panel.add(Box.createRigidArea(new Dimension(10, 0)));
 
-        UnlockDoorReply = new JTextField("", 10);
+        UnlockDoorReply= new JTextField("", 20);
         UnlockDoorReply.setEditable(false);
         panel.add(UnlockDoorReply);
         return panel;
 
     }
 
-    //unary action
+	// unary action
+	public void actionUnlockDoor(ActionEvent e) {
+		System.out.println("Unlock Door action");
+		ManagedChannel channel = ManagedChannelBuilder
+				.forAddress("localhost", this.getServicesPort().get(DoorServiceServer.JMDNS_SERVICE_TYPE))
+				.usePlaintext().build();
+		DoorServiceGrpc.DoorServiceBlockingStub client = DoorServiceGrpc.newBlockingStub(channel);
 
-    public void actionUnlockDoor(ActionEvent e) {
-        System.out.println("Unlock Door action");
-        ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 50051).usePlaintext().build();
-        project.doorservice.DoorServiceGrpc.DoorServiceBlockingStub client = project.doorservice.DoorServiceGrpc.newBlockingStub(channel);
+		// getting door number to reply if it is locked or not
+		DoorRequest request = DoorRequest.newBuilder().setDoorNumber(Integer.parseInt(UnlockDoorNum.getText())).build();
+		UnlockDoorResponse response = client.unlockDoor(request);
 
-        //getting door number to reply if it is locked or not
-        project.doorservice.DoorRequest request = project.doorservice.DoorRequest.newBuilder().setDoorNumber(Integer.parseInt(UnlockDoorNum.getText())).build();
-        project.doorservice.UnlockDoorResponse response = client.unlockDoor(request);
-
-        //Reply
-        UnlockDoorReply.setText(response.getUnlockMessage());
-    }
+		// Reply
+		UnlockDoorReply.setText(response.getUnlockMessage());
+	}
 
     /**
      * Door Checker
      **/
-
     private JLabel DoorCheckerLabel;
     private JTextField DoorNum;
-    private JLabel DoorCheckerReplyLabel;
     private JTextArea DoorCheckerReply;
+	
+	DoorServiceGrpc.DoorServiceStub asyncStub;
+	StreamObserver<DoorRequest> requestObserver;
+	StreamObserver<DoorsResponse> doorsResponse = new StreamObserver<DoorsResponse>() {
+		@Override
+		public void onNext(DoorsResponse value) {
+			DoorCheckerReply.append("[Doors Unlocked] " + value.getUnlockedDoorsList() + "\n");
+			DoorCheckerReply.append("[Doors Locked] " + value.getLockedDoorsList() + "\n");
+			DoorCheckerReply.append("[Doors Not Found] " + value.getNotFoundList() + "\n");
+		}// adding door numbers
+
+		@Override
+		public void onError(Throwable t) {
+			System.out.println("Check doors failed");
+		} // ERROR
+
+		@Override
+		public void onCompleted() {
+			System.out.println("Finished adding doors");
+		}// finishing process
+	};
 
     private JPanel getDoorCheckerService() {
+		ManagedChannel channel = ManagedChannelBuilder
+				.forAddress("localhost", this.getServicesPort().get(DoorServiceServer.JMDNS_SERVICE_TYPE))
+				.usePlaintext().build();
+		asyncStub = DoorServiceGrpc.newStub(channel);
+		requestObserver = asyncStub.checkDoors(doorsResponse);
+
         JPanel frame = new JPanel();
-        JPanel panel = new JPanel(new GridLayout(1, 1));
+        JPanel panel = new JPanel(new GridLayout(1,1));
         JPanel panel2 = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.PAGE_AXIS));
         panel2.setLayout(new BoxLayout(panel2, BoxLayout.PAGE_AXIS));
@@ -148,7 +271,7 @@ public class UserInterface {
         panel.add(DoorCheckerLabel);
 
         //Add number field
-        DoorNum = new JTextField("", 10);
+        DoorNum = new JTextField("",10);
         DoorNum.setEditable(true);
         panel.add(DoorNum);
 
@@ -173,9 +296,9 @@ public class UserInterface {
         container.setLayout(new FlowLayout());
 
         //Reply JTexArea
-        DoorCheckerReply = new JTextArea(10, 30);
+        DoorCheckerReply= new JTextArea(10, 40);
         DoorCheckerReply.setCaretPosition(DoorCheckerReply.getDocument().getLength());
-        DefaultCaret caret = (DefaultCaret) DoorCheckerReply.getCaret();
+        DefaultCaret caret = (DefaultCaret)DoorCheckerReply.getCaret();
         caret.setUpdatePolicy(DefaultCaret.ALWAYS_UPDATE);
 
         //JText Scrool pane
@@ -189,52 +312,26 @@ public class UserInterface {
         return frame;
     }
 
-    //Client stream initializing
-    ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 50051).usePlaintext().build();
-    project.doorservice.DoorServiceGrpc.DoorServiceStub asyncStub = project.doorservice.DoorServiceGrpc.newStub(channel);
-    StreamObserver<project.doorservice.DoorsResponse> doorsResponse = new StreamObserver<project.doorservice.DoorsResponse>() {
-        @Override
-        public void onNext(project.doorservice.DoorsResponse value) {
-            DoorCheckerReply.append("[Doors Unlocked] " + value.getUnlockedDoorsList() + "\n");
-            DoorCheckerReply.append("[Doors Locked] " + value.getLockedDoorsList() + "\n");
-            DoorCheckerReply.append("[Doors Not Found] " + value.getNotFoundList() + "\n");
-        }//adding door numbers
+	// Adding doors to the list of locked and unlocked doors
+	public void actionAddDoor(ActionEvent e) {
+		requestObserver.onNext(DoorRequest.newBuilder().setDoorNumber(Integer.parseInt(DoorNum.getText())).build());
+		DoorNum.setText("");
+		DoorCheckerReply.setText("");
+	}
 
-        @Override
-        public void onError(Throwable t) {
-            System.out.println("Check doors failed");
-        } //ERROR
-
-        @Override
-        public void onCompleted() {
-            System.out.println("Finished adding doors");
-        }//finishing process
-    };
-
-    StreamObserver<project.doorservice.DoorRequest> requestObserver = asyncStub.checkDoors(doorsResponse);
-
-    //Adding doors to the list of locked and unlocked doors
-    public void actionAddDoor(ActionEvent e) {
-        requestObserver.onNext(project.doorservice.DoorRequest.newBuilder().setDoorNumber(Integer.parseInt(DoorNum.getText())).build());
-        DoorNum.setText("");
-    }
-
-    //Action to show list
-    public void actionDoorChecker(ActionEvent e) {
-        requestObserver.onCompleted();
-        requestObserver = asyncStub.checkDoors(doorsResponse);
-
-    }
+	// Action to show list
+	public void actionDoorChecker(ActionEvent e) {
+		requestObserver.onCompleted();
+		requestObserver = asyncStub.checkDoors(doorsResponse);
+	}
 
     /**---CAMERA SERVICE-----*/
 
-    /**
-     * MOVEMENT SENSOR
-     **/
+    /**MOVEMENT SENSOR**/
     private JLabel RoomLabel;
-    private JTextField Room;
-    private JLabel TimeLabel;
-    private JTextField Time;
+    private JTextField RoomMov;
+    private JLabel TimeLabelMov;
+    private JTextField TimeMov;
     private JTextArea MovementSensorReply;
 
     private JPanel getMovementSensorService() {
@@ -242,32 +339,28 @@ public class UserInterface {
 
         JPanel MovementPanel = new JPanel();
         JPanel MovementPanelReply = new JPanel();
-//        MovementPanel.setLayout();
-
-        JLabel label = new JLabel("LockDoor");
-
 
         MovementPanel.setLayout(new BoxLayout(MovementPanel, BoxLayout.PAGE_AXIS));
         MovementPanelReply.setLayout(new BoxLayout(MovementPanelReply, BoxLayout.PAGE_AXIS));
 
         Border border = BorderFactory.createTitledBorder("Movement Sensor");
         frame.setBorder(border);
-        frame.setBounds(100, 100, 200, 200);
+        frame.setBounds(100,100,200,200);
 
 
         RoomLabel = new JLabel("Room");
         MovementPanel.add(RoomLabel);
 
-        Room = new JTextField("", 10);
-        Room.setEditable(true);
-        MovementPanel.add(Room);
+        RoomMov= new JTextField("",10);
+        RoomMov.setEditable(true);
+        MovementPanel.add(RoomMov);
 
-        TimeLabel = new JLabel("Time");
-        MovementPanel.add(TimeLabel);
+        TimeLabelMov = new JLabel("Time");
+        MovementPanel.add(TimeLabelMov);
 
-        Time = new JTextField("", 10);
-        Time.setEditable(true);
-        MovementPanel.add(Time);
+        TimeMov = new JTextField("",10);
+        TimeMov.setEditable(true);
+        MovementPanel.add(TimeMov);
 
         //button
 
@@ -284,9 +377,9 @@ public class UserInterface {
         container.setLayout(new FlowLayout());
 
         //Reply JTexArea
-        MovementSensorReply = new JTextArea(10, 30);
+        MovementSensorReply= new JTextArea(10, 30);
         MovementSensorReply.setCaretPosition(MovementSensorReply.getDocument().getLength());
-        DefaultCaret caret = (DefaultCaret) MovementSensorReply.getCaret();
+        DefaultCaret caret = (DefaultCaret)MovementSensorReply.getCaret();
         caret.setUpdatePolicy(DefaultCaret.ALWAYS_UPDATE);
 
 
@@ -301,41 +394,41 @@ public class UserInterface {
 
     }
 
-    //Server Stream Action
-    public void actionMovementSensor(ActionEvent e) {
-        //inserting in a thread to check movement constantly e getting the answer
-        new Thread(() -> {
-            ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 50052).usePlaintext().build();
-            project.cameraservice.CameraServiceGrpc.CameraServiceBlockingStub client = project.cameraservice.CameraServiceGrpc.newBlockingStub(channel);
-            project.cameraservice.DetectionRequest request = project.cameraservice.DetectionRequest.newBuilder()
-                    .setRoom(project.cameraservice.Room.newBuilder().setRoomIdentifier(Room.getText()).build()).setDuration(Integer.parseInt(Time.getText())).build();
-            client.detectMovement(request).forEachRemaining(response -> {
-                System.out.println(response);
-                String msg = "[" + new Date() + "] Movement detected? " + response.getMovement() + "\n";
-                MovementSensorReply.append(msg);
-            });
-        }).start();
-    }
+	// Server Stream Action
+	public void actionMovementSensor(ActionEvent e) {
+		// inserting in a thread to check movement constantly e getting the answer
+		new Thread(() -> {
+			ManagedChannel channel = ManagedChannelBuilder
+					.forAddress("localhost", this.getServicesPort().get(CameraServiceServer.JMDNS_SERVICE_TYPE))
+					.usePlaintext().build();
+			CameraServiceGrpc.CameraServiceBlockingStub client = CameraServiceGrpc.newBlockingStub(channel);
+			DetectionRequest request = DetectionRequest.newBuilder()
+					.setRoom(project.cameraservice.Room.newBuilder().setRoomIdentifier(RoomMov.getText()).build())
+					.setDuration(Integer.parseInt(TimeMov.getText())).build();
+			client.detectMovement(request).forEachRemaining(response -> {
+				System.out.println(response);
+				String msg = "[" + new Date() + "] Movement detected? " + response.getMovement() + "\n";
+				MovementSensorReply.append(msg);
+			});
+		}).start();
+	}
 
-    /**
-     * NOISE SENSOR
-     **/
+    /**NOISE SENSOR**/
 
-    private JLabel NoiseSensorLabel;
+    private JTextField RoomNoise;
+    private JTextField TimeNoise;
     private JTextArea NoiseSensorReply;
+    private JLabel TimeLabelNoise;
 
-    private JPanel getNoiseSensorService() {
+    private JPanel getNoiseSensorService()  {
 
         JPanel NoisePanel = new JPanel();
         JPanel NoisePanelReply = new JPanel();
         JPanel frame = new JPanel();
 
-        JLabel label = new JLabel("LockDoor");
-        BoxLayout boxLayout = new BoxLayout(NoisePanel, BoxLayout.X_AXIS);
-
         Border border = BorderFactory.createTitledBorder("Noise Sensor");
         frame.setBorder(border);
-        frame.setBounds(100, 100, 200, 200);
+        frame.setBounds(100,100,200,200);
 
 
         NoisePanel.setLayout(new BoxLayout(NoisePanel, BoxLayout.PAGE_AXIS));
@@ -346,16 +439,16 @@ public class UserInterface {
         RoomLabel = new JLabel("Room");
         NoisePanel.add(RoomLabel);
 
-        Room = new JTextField("", 10);
-        Room.setEditable(true);
-        NoisePanel.add(Room);
+        RoomNoise= new JTextField("",10);
+        RoomNoise.setEditable(true);
+        NoisePanel.add(RoomNoise);
 
-        TimeLabel = new JLabel("Time");
-        NoisePanel.add(TimeLabel);
+        TimeLabelNoise = new JLabel("Time");
+        NoisePanel.add(TimeLabelNoise);
 
-        Time = new JTextField("", 10);
-        Time.setEditable(true);
-        NoisePanel.add(Time);
+        TimeNoise = new JTextField("",10);
+        TimeNoise.setEditable(true);
+        NoisePanel.add(TimeNoise);
 
         //button
 
@@ -371,9 +464,9 @@ public class UserInterface {
         container.setLayout(new FlowLayout());
 
         //Reply JTexArea
-        NoiseSensorReply = new JTextArea(10, 30);
+        NoiseSensorReply= new JTextArea(10, 30);
         NoiseSensorReply.setCaretPosition(NoiseSensorReply.getDocument().getLength());
-        DefaultCaret caret = (DefaultCaret) NoiseSensorReply.getCaret();
+        DefaultCaret caret = (DefaultCaret)NoiseSensorReply.getCaret();
         caret.setUpdatePolicy(DefaultCaret.ALWAYS_UPDATE);
 
 
@@ -388,44 +481,69 @@ public class UserInterface {
 
     }
 
-    //Server Stream Noise Sensor Service
+	// Server Stream Noise Sensor Service
+	public void actionNoiseSensor(ActionEvent e) {
+		System.out.println("Noise service to be invoked");
+		// inserting in a thread to check movement constantly e getting the answer
+		new Thread(() -> {
+			ManagedChannel channel = ManagedChannelBuilder
+					.forAddress("localhost", this.getServicesPort().get(CameraServiceServer.JMDNS_SERVICE_TYPE))
+					.usePlaintext().build();
+			CameraServiceGrpc.CameraServiceBlockingStub client = CameraServiceGrpc.newBlockingStub(channel);
 
-    public void actionNoiseSensor(ActionEvent e) {
-        System.out.println("Noise service to be invoked");
-
-        //inserting in a thread to check movement constantly e getting the answer
-        new Thread(() -> {
-            ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 50052).usePlaintext().build();
-            project.cameraservice.CameraServiceGrpc.CameraServiceBlockingStub client = project.cameraservice.CameraServiceGrpc.newBlockingStub(channel);
-
-            //Setting the request
-            project.cameraservice.DetectionRequest request = project.cameraservice.DetectionRequest.newBuilder()
-                    .setRoom(project.cameraservice.Room.newBuilder().setRoomIdentifier(Room.getText()).build()).setDuration(Integer.parseInt(Time.getText())).build();
-            client.detectNoise(request).forEachRemaining(response -> {
-                System.out.println(response);
-                String msg = "[" + new Date() + "] Noise detected? " + response.getNoise() + "\n";
-                NoiseSensorReply.append(msg);
-            });
-        }).start();
-    }//end of noise sensor
+			// Setting the request
+			DetectionRequest request = DetectionRequest.newBuilder()
+					.setRoom(project.cameraservice.Room.newBuilder().setRoomIdentifier(RoomNoise.getText()).build())
+					.setDuration(Integer.parseInt(TimeNoise.getText())).build();
+			client.detectNoise(request).forEachRemaining(response -> {
+				System.out.println(response);
+				String msg = "[" + new Date() + "] Noise detected? " + response.getNoise() + "\n";
+				NoiseSensorReply.append(msg);
+			});
+		}).start();
+	}// end of noise sensor
 
 
     //VIEW CAMERA SERVICE
 
     private JLabel CameraServiceLabel;
-    private JLabel CameraServiceReplyLabel;
     private JTextField RoomNum;
+    private JButton roomSubmitBtn;
+    private JButton CameraCloseBtn;
     private JTextArea CameraServiceReply;
+   
+	CameraServiceGrpc.CameraServiceStub cameraAsyncStub;
+	StreamObserver<Room> cameraRequest;
+	StreamObserver<CameraViewResponse> cameraResponse = new StreamObserver<CameraViewResponse>() {
+		@Override
+		public void onNext(CameraViewResponse value) {
+			System.out.println(value.getImage());
+			String msg = "[" + new Date() + "] " + value.getImage() + "\n";
+			CameraServiceReply.append(msg);
+			CameraServiceReply.setCaretPosition(CameraServiceReply.getDocument().getLength());
+		}
+
+		@Override
+		public void onError(Throwable t) {
+			System.out.println("View camera failed");
+		}
+
+		@Override
+		public void onCompleted() {
+			System.out.println("View camera completed");
+		}
+	};
 
     private JPanel getViewCameraService() {
-
+		ManagedChannel cameraChannel = ManagedChannelBuilder
+				.forAddress("localhost", this.getServicesPort().get(CameraServiceServer.JMDNS_SERVICE_TYPE))
+				.usePlaintext().build();
+		cameraAsyncStub = CameraServiceGrpc.newStub(cameraChannel);
+		cameraRequest = cameraAsyncStub.viewCamera(cameraResponse);
+    	
         JPanel viewCameraPanel = new JPanel();
         JPanel viewCameraPanel1 = new JPanel();
         JPanel viewCameraPanel2 = new JPanel();
-        JPanel viewCameraPanel3 = new JPanel();
-
-
-        JLabel label = new JLabel("View Camera Service");
 
         viewCameraPanel1.setLayout(new BoxLayout(viewCameraPanel1, BoxLayout.PAGE_AXIS));
         viewCameraPanel2.setLayout(new BoxLayout(viewCameraPanel2, BoxLayout.PAGE_AXIS));
@@ -440,19 +558,19 @@ public class UserInterface {
         viewCameraPanel1.add(CameraServiceLabel);
 
         //Add number field
-        RoomNum = new JTextField("", 10);
+        RoomNum = new JTextField("",10);
         RoomNum.setEditable(true);
         viewCameraPanel1.add(RoomNum);
 
         //Button Add
-        JButton roomSubmitBtn = new JButton("Start Room Streaming");//change service name
+        roomSubmitBtn = new JButton("Start Room Streaming");//change service name
         roomSubmitBtn.setPreferredSize(new Dimension(200, 30));
         roomSubmitBtn.addActionListener(this::actionViewCamera);
         viewCameraPanel1.add(roomSubmitBtn);
         viewCameraPanel1.add(Box.createRigidArea(new Dimension(10, 0)));
 
         //Button Add
-        JButton CameraCloseBtn = new JButton("Stop Video Streaming");//change service name
+        CameraCloseBtn = new JButton("Stop Video Streaming");//change service name
         CameraCloseBtn.setPreferredSize(new Dimension(200, 30));
         CameraCloseBtn.addActionListener(this::stopViewCamera);
         viewCameraPanel1.add(CameraCloseBtn);
@@ -466,9 +584,9 @@ public class UserInterface {
         container.setLayout(new FlowLayout());
 
         //Reply JTexArea
-        CameraServiceReply = new JTextArea(10, 30);
+        CameraServiceReply= new JTextArea(10, 30);
         CameraServiceReply.setCaretPosition(CameraServiceReply.getDocument().getLength());
-        DefaultCaret caret = (DefaultCaret) CameraServiceReply.getCaret();
+        DefaultCaret caret = (DefaultCaret)CameraServiceReply.getCaret();
         caret.setUpdatePolicy(DefaultCaret.ALWAYS_UPDATE);
 
         //JText Scrool pane
@@ -483,65 +601,41 @@ public class UserInterface {
 
     }
 
-    ManagedChannel cameraChannel = ManagedChannelBuilder.forAddress("localhost", 50052).usePlaintext().build();
-    project.cameraservice.CameraServiceGrpc.CameraServiceStub cameraAsyncStub = project.cameraservice.CameraServiceGrpc.newStub(cameraChannel);
-    StreamObserver<project.cameraservice.CameraViewResponse> cameraResponse = new StreamObserver<project.cameraservice.CameraViewResponse>() {
-        @Override
-        public void onNext(project.cameraservice.CameraViewResponse value) {
-            System.out.println(value.getImage());
-            String msg = "[" + new Date() + "] " + value.getImage() + "\n";
-            CameraServiceReply.append(msg);
-            CameraServiceReply.setCaretPosition(CameraServiceReply.getDocument().getLength());
-        }
+	AtomicBoolean streaming = new AtomicBoolean(false);
+	Thread streamingThread;
+	public void actionViewCamera(ActionEvent e) {
+		if (streamingThread != null && streamingThread.isAlive()) {
+			System.out.println("View Camera in Progress...");
+			return;
+		}
 
-        @Override
-        public void onError(Throwable t) {
-            System.out.println("View camera failed");
-        }
+		System.out.println("Starting View Camera...");
+		CameraServiceReply.setText("");
+		streaming.set(true);
+		streamingThread = new Thread(() -> {
+			while (streaming.get()) {
+				System.out.println("Sending view camera request");
+				cameraRequest
+						.onNext(project.cameraservice.Room.newBuilder().setRoomIdentifier(RoomNum.getText()).build());
+				try {
+					Thread.sleep(1000);
+				} catch (InterruptedException ex) {
+					ex.printStackTrace();
+				}
+			}
+		});
+		streamingThread.start();
+	}
 
-        @Override
-        public void onCompleted() {
-            System.out.println("View camera completed");
-        }
-    };
-
-    StreamObserver<project.cameraservice.Room> cameraRequest = cameraAsyncStub.viewCamera(cameraResponse);
-    AtomicBoolean streaming = new AtomicBoolean(false);
-    Thread streamingThread;
-
-    public void actionViewCamera(ActionEvent e) {
-        if (streamingThread != null && streamingThread.isAlive()) {
-            System.out.println("View Camera in Progress...");
-            return;
-        }
-
-        System.out.println("Starting View Camera...");
-        CameraServiceReply.setText("");
-        streaming.set(true);
-        streamingThread = new Thread(() -> {
-            while (streaming.get()) {
-                System.out.println("Sending view camera request");
-                cameraRequest.onNext(project.cameraservice.Room.newBuilder().setRoomIdentifier(RoomNum.getText()).build());
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException ex) {
-                    ex.printStackTrace();
-                }
-            }
-        });
-        streamingThread.start();
-    }
-
-    public void stopViewCamera(ActionEvent e) {
-        System.out.println("Stop view camera");
-        streaming.set(false);
-        streamingThread.interrupt();
-        cameraRequest.onCompleted();
-        cameraRequest = cameraAsyncStub.viewCamera(cameraResponse);
-    }
+	public void stopViewCamera(ActionEvent e) {
+		System.out.println("Stop view camera");
+		streaming.set(false);
+		streamingThread.interrupt();
+		cameraRequest.onCompleted();
+		cameraRequest = cameraAsyncStub.viewCamera(cameraResponse);
+	}
 
     /**---ALARM SERVICE-----*/
-
 
     //Alarm on
 
@@ -554,9 +648,8 @@ public class UserInterface {
         JPanel AlarmPanel = new JPanel();
 
         AlarmOnLabel = new JLabel("Insert House number");
-        BoxLayout boxLayout = new BoxLayout(AlarmPanel, BoxLayout.X_AXIS);
         AlarmPanel.add(AlarmOnLabel);
-        HomeNum = new JTextField("", 10);
+        HomeNum = new JTextField("",20);
         HomeNum.setEditable(true);
         AlarmPanel.add(HomeNum);
 
@@ -566,29 +659,31 @@ public class UserInterface {
 
         //Button
         JButton AlarmOnBtn = new JButton("Alarm On");
-        AlarmOnBtn.setPreferredSize(new Dimension(200, 30));
+        AlarmOnBtn.setPreferredSize(new Dimension(280, 30));
         AlarmOnBtn.addActionListener(this::actionAlarmOn);
         AlarmPanel.add(AlarmOnBtn);
         AlarmPanel.add(Box.createRigidArea(new Dimension(10, 0)));
 
         //Reply
-        AlarmOnReply = new JTextArea(1, 10);
+        AlarmOnReply= new JTextArea(1,20);
         AlarmOnReply.setEditable(false);
         AlarmPanel.add(AlarmOnReply);
 
         return AlarmPanel;
     }
 
-    public void actionAlarmOn(ActionEvent e) {
-        System.out.println("Alarm on service to be invoked");
+	public void actionAlarmOn(ActionEvent e) {
+		System.out.println("Alarm on service to be invoked");
 
-        ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 50053).usePlaintext().build();
-        project.alarmservice.AlarmServiceGrpc.AlarmServiceBlockingStub client = project.alarmservice.AlarmServiceGrpc.newBlockingStub(channel);
-        project.alarmservice.Home home = project.alarmservice.Home.newBuilder().setHomeIdentifier(HomeNum.getText()).build();
-        project.alarmservice.TurnOnAlarmResponse response = client.turnOnAlarm(home);
+		ManagedChannel channel = ManagedChannelBuilder
+				.forAddress("localhost", this.getServicesPort().get(AlarmServiceServer.JMDNS_SERVICE_TYPE))
+				.usePlaintext().build();
+		AlarmServiceGrpc.AlarmServiceBlockingStub client = AlarmServiceGrpc.newBlockingStub(channel);
+		Home home = Home.newBuilder().setHomeIdentifier(HomeNum.getText()).build();
+		TurnOnAlarmResponse response = client.turnOnAlarm(home);
 
-        AlarmOnReply.setText(response.getTurnOnMessage());
-    }
+		AlarmOnReply.setText(response.getTurnOnMessage());
+	}
 
 
     //Alarm off
@@ -602,9 +697,8 @@ public class UserInterface {
         JPanel AlarmPanel = new JPanel();
 
         AlarmOffLabel = new JLabel("Insert House number");
-        BoxLayout boxLayout = new BoxLayout(AlarmPanel, BoxLayout.X_AXIS);
         AlarmPanel.add(AlarmOffLabel);
-        HomeNumOff = new JTextField("", 10);
+        HomeNumOff = new JTextField("",20);
         HomeNumOff.setEditable(true);
         AlarmPanel.add(HomeNumOff);
 
@@ -614,42 +708,39 @@ public class UserInterface {
 
         //Button
         JButton AlarmOffBtn = new JButton("Alarm Off");
-        AlarmOffBtn.setPreferredSize(new Dimension(200, 30));
+        AlarmOffBtn.setPreferredSize(new Dimension(280, 30));
         AlarmOffBtn.addActionListener(this::actionAlarmOff);
         AlarmPanel.add(AlarmOffBtn);
         AlarmPanel.add(Box.createRigidArea(new Dimension(10, 0)));
 
         //Reply
-        AlarmOffReply = new JTextArea(1, 10);
+        AlarmOffReply = new JTextArea(1,20);
         AlarmOffReply.setEditable(false);
         AlarmPanel.add(AlarmOffReply);
 
         return AlarmPanel;
     }
 
-    public void actionAlarmOff(ActionEvent e) {
-        System.out.println("Alarm on service to be invoked");
+	public void actionAlarmOff(ActionEvent e) {
+		System.out.println("Alarm on service to be invoked");
 
-        ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 50053).usePlaintext().build();
-        project.alarmservice.AlarmServiceGrpc.AlarmServiceBlockingStub client = project.alarmservice.AlarmServiceGrpc.newBlockingStub(channel);
-        project.alarmservice.Home home = project.alarmservice.Home.newBuilder().setHomeIdentifier(HomeNumOff.getText()).build();
-        project.alarmservice.TurnOffAlarmResponse response = client.turnOffAlarm(home);
+		ManagedChannel channel = ManagedChannelBuilder
+				.forAddress("localhost", this.getServicesPort().get(AlarmServiceServer.JMDNS_SERVICE_TYPE))
+				.usePlaintext().build();
+		AlarmServiceGrpc.AlarmServiceBlockingStub client = AlarmServiceGrpc.newBlockingStub(channel);
+		Home home = Home.newBuilder().setHomeIdentifier(HomeNumOff.getText()).build();
+		TurnOffAlarmResponse response = client.turnOffAlarm(home);
 
-        AlarmOffReply.setText(response.getTurnOffMessage());
-    }
+		AlarmOffReply.setText(response.getTurnOffMessage());
+	}
 
 
     //Panic button - Call the police
-
-    private JLabel PanicBtnLabel;
     private JTextArea PanicBtnReply;
 
     private JPanel getPanicBtnService() {
 
         JPanel PanicPanel = new JPanel();
-
-        JLabel label = new JLabel("Panic Button");
-        BoxLayout boxLayout = new BoxLayout(PanicPanel, BoxLayout.X_AXIS);
 
         //Formatting border
         Border border = BorderFactory.createTitledBorder("Panic Button - call police");
@@ -657,7 +748,7 @@ public class UserInterface {
 
         //Button
         JButton PanicBtn = new JButton("PANIC BUTTON");
-        PanicBtn.setPreferredSize(new Dimension(200, 30));
+        PanicBtn.setPreferredSize(new Dimension(150, 30));
         PanicBtn.addActionListener(this::actionPanicButton);
         PanicPanel.add(PanicBtn);
         PanicPanel.add(Box.createRigidArea(new Dimension(10, 0)));
@@ -668,9 +759,10 @@ public class UserInterface {
         container.setLayout(new FlowLayout());
 
         //Reply JTexArea
-        PanicBtnReply = new JTextArea(10, 30);
+        PanicBtnReply= new JTextArea(10, 61);
         PanicBtnReply.setCaretPosition(PanicBtnReply.getDocument().getLength());
-        DefaultCaret caret = (DefaultCaret) CameraServiceReply.getCaret();
+        PanicBtnReply.setForeground(Color.RED);
+        DefaultCaret caret = (DefaultCaret)CameraServiceReply.getCaret();
         caret.setUpdatePolicy(DefaultCaret.ALWAYS_UPDATE);
 
         //JText Scrool pane
@@ -682,31 +774,31 @@ public class UserInterface {
 
     }
 
-    public void actionPanicButton(ActionEvent e) {
-        System.out.println("Panic Button to be invoked");
+	public void actionPanicButton(ActionEvent e) {
+		System.out.println("Panic Button to be invoked");
 
-        //inserting in a thread to check movement constantly e getting the answer
-        new Thread(() -> {
-            ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 50053).usePlaintext().build();
-            project.alarmservice.AlarmServiceGrpc.AlarmServiceBlockingStub client = project.alarmservice.AlarmServiceGrpc.newBlockingStub(channel);
-            project.alarmservice.Home home = project.alarmservice.Home.newBuilder().setHomeIdentifier("dummy_home").build();
-            client.panicButton(home).forEachRemaining(response -> {
-                System.out.println(response);
-                String msg = "[" + new Date() + "] " + response.getInformation() + "\n";
-                PanicBtnReply.append(msg);
-            });
-        }).start();
-    }
+		//inserting in a thread to check movement constantly e getting the answer
+		new Thread(() -> {
+			ManagedChannel channel = ManagedChannelBuilder
+					.forAddress("localhost", this.getServicesPort().get(AlarmServiceServer.JMDNS_SERVICE_TYPE))
+					.usePlaintext().build();
+			AlarmServiceGrpc.AlarmServiceBlockingStub client = AlarmServiceGrpc.newBlockingStub(channel);
+			Home home = Home.newBuilder().setHomeIdentifier("dummy_home").build();
+			client.panicButton(home).forEachRemaining(response -> {
+				System.out.println(response);
+				String msg = "[" + new Date() + "] " + response.getInformation() + "\n";
+				PanicBtnReply.append(msg);
+			});
+		}).start();
+	}
 
     /**
-     * BUILD GUI
+     *  BUILD GUI
      */
 
-    public void build() {
-        JFrame frame = new JFrame("Smart security system");
+    public void build(){
+        JFrame frame = new JFrame("Smart Security System");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-
-        JTabbedPane first = new JTabbedPane();
 
         //add buttons on pannel
         JPanel panel = new JPanel();
@@ -742,9 +834,9 @@ public class UserInterface {
         tp.add("Alarm", panel3);
 
         frame.add(tp);
-        frame.setSize(800, 900);
-        frame.setVisible(true);
+        frame.setSize(1000,1000);
+		frame.setVisible(true);
 
-    }
+	}
 
 }

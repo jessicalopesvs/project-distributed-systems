@@ -23,14 +23,15 @@ message DoorRequest {
 }
 
 message LockDoorResponse {
-	bool locked = 1;
+	string lockMessage = 1;
 }
 
 message UnlockDoorResponse {
-	bool unlocked = 1;
+	string unlockMessage = 1;
 }
 
 message DoorsResponse {
 	repeated int32 lockedDoors = 1;
 	repeated int32 unlockedDoors = 2;
+	repeated int32 notFound = 3;
 }

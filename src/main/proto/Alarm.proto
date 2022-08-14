@@ -24,15 +24,14 @@ message Home {
 
 message TurnOnAlarmResponse {
 	Home home = 1;
-	bool turnedOn = 2;
+	string turnOnMessage = 2;
 }
 
 message TurnOffAlarmResponse {
 	Home home = 1;
-	bool turnedOff = 2;
+	string turnOffMessage = 2;
 }
 
 message PanicButtonResponse {
-	int64 timestamp = 1;
 	string information = 2;
 }

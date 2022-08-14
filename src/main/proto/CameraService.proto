@@ -28,12 +28,10 @@ message DetectionRequest {
 }
 
 message MovementDetectionResponse {
-	int64 timestamp = 1;
 	bool movement = 2;
 }
 
 message NoiseDetectionResponse {
-	int64 timestamp = 1;
 	bool noise = 2;
 }
 

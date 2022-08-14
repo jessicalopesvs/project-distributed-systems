@@ -3,34 +3,31 @@ package project.cameraservice;
 import java.io.IOException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
-
-import javax.jmdns.JmDNS;
-import javax.jmdns.ServiceInfo;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
+import project.jmdnsutil.JmDnsUtil;
 
 public class CameraServiceServer {
-	public static final String JMDNS_SERVICE_TYPE = "_cameraservice._tcp.local.";
+	public static final String JMDNS_SERVICE_TYPE = "_cameraservice._grpc.local.";
 	private Server server;
+	private AtomicBoolean serverStarting;
 
-	public static void main(String[] args) throws IOException, InterruptedException {
-		final CameraServiceServer server = new CameraServiceServer();
-		server.start(50052);
-		server.blockUntilShutdown();
+	public AtomicBoolean getServerStarting() {
+		return serverStarting;
+	}
+
+	public void setServerStarting(AtomicBoolean serverStarting) {
+		this.serverStarting = serverStarting;
 	}
 
 	public void start(int port) throws IOException, InterruptedException {
-		/**
-		 * Registering Service with JmDNS
-		 */
-		JmDNS jmdns = JmDNS.create("localhost");
-		ServiceInfo serviceInfo = ServiceInfo.create(JMDNS_SERVICE_TYPE, "CameraService", port, "cameraservice=grpc");
-		jmdns.registerService(serviceInfo);
+		// calling jmdns util class to register service
+		JmDnsUtil.RegisterService(JMDNS_SERVICE_TYPE, "CameraService", port, "cameraservice=grpc");
 
-		Thread.sleep(1000);
-
+		// starting service in the provided port
 		server = ServerBuilder.forPort(port).addService(new CameraServiceImpl()).build().start();
 		System.out.println("CameraService Server Started, listening on port: " + port);
 		Runtime.getRuntime().addShutdownHook(new Thread() {
@@ -57,12 +54,14 @@ public class CameraServiceServer {
 		if (server != null) {
 			server.awaitTermination();
 		}
-	}
+	}// End of Server Implementation
+
+	/** SERVICE IMPLEMENTATION */
 
 	static class CameraServiceImpl extends CameraServiceGrpc.CameraServiceImplBase {
 		@Override
 		public void detectMovement(DetectionRequest request,
-								   StreamObserver<MovementDetectionResponse> responseObserver) {
+				StreamObserver<MovementDetectionResponse> responseObserver) {
 			for (int i = 0; i < request.getDuration(); i++) {
 				System.out.println("Detecting Movement for Room #" + request.getRoom().getRoomIdentifier());
 				try {
